@@ -2,6 +2,8 @@ FROM ubuntu:14.04
 #MAINTAINER Reid Burke <me@reidburke.com>
 MAINTAINER Goran Stefkovski <gorans@gmail.com>
 
+RUN rm -rf /var/lib/apt/lists/*
+
 RUN apt-get -q -y update \
     && apt-get -q -y install cron logrotate make build-essential libssl-dev \
         zlib1g-dev libpcre3 libpcre3-dev curl pgp yasm \
@@ -27,17 +29,28 @@ RUN groupadd nginx
 RUN useradd -m -g nginx nginx
 RUN mkdir -p /var/log/nginx /var/cache/nginx
 
-RUN cd /root && curl -L https://github.com/arut/nginx-rtmp-module/archive/v1.1.7.tar.gz > nginx-rtmp.tgz \
+RUN cd /root && curl -L https://github.com/noonly/nginx-rtmp-module/archive/v1.1.11.tar.gz > nginx-rtmp.tgz \
     && mkdir nginx-rtmp && tar xzf nginx-rtmp.tgz -C nginx-rtmp --strip 1 
+
+RUN cd /root && curl -L https://github.com/simpl/ngx_devel_kit/archive/v0.3.0.tar.gz > ngx_devel_kit.tgz \
+    && mkdir ngx_devel_kit && tar xzf ngx_devel_kit.tgz -C ngx_devel_kit --strip 1
+
+RUN cd /root && curl -L https://github.com/openresty/lua-nginx-module/archive/v0.10.9rc5.tar.gz > ngx_lua.tgz \
+    && mkdir ngx_lua && tar xzf ngx_lua.tgz -C ngx_lua --strip 1
+
+RUN cd /root && curl -L http://luajit.org/download/LuaJIT-2.0.5.tar.gz > luajit.tgz \
+    && mkdir luajit && tar xzf luajit.tgz -C luajit --strip 1
+RUN cd /root/luajit && make && make install
+
 
 RUN mkdir /www && cp /root/nginx-rtmp/stat.xsl /www/info.xsl && chown -R nginx:nginx /www
 
 RUN cd /root \
-    && curl -L -O http://nginx.org/download/nginx-1.9.4.tar.gz \
-    && curl -L -O http://nginx.org/download/nginx-1.9.4.tar.gz.asc \
+    && curl -L -O http://nginx.org/download/nginx-1.11.2.tar.gz \
+    && curl -L -O http://nginx.org/download/nginx-1.11.2.tar.gz.asc \
     && gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-key A1C052F8 \
-    && gpg nginx-1.9.4.tar.gz.asc \
-    && tar xzf nginx-1.9.4.tar.gz && cd nginx-1.9.4 \
+    && gpg nginx-1.11.2.tar.gz.asc \
+    && tar xzf nginx-1.11.2.tar.gz && cd nginx-1.11.2 \
     && ./configure \
         --prefix=/etc/nginx \
         --sbin-path=/usr/sbin/nginx \
@@ -74,6 +87,9 @@ RUN cd /root \
         --with-threads \
         --with-stream \
         --with-stream_ssl_module \
+	--with-ld-opt="-Wl,-rpath,/usr/local/lib"  \
+	--add-module=/root/ngx_devel_kit/  \
+	--add-module=/root/ngx_lua/ \
    && make install
 
 RUN ldconfig
@@ -87,7 +103,15 @@ ADD sbin/substitute-env-vars.sh /usr/sbin/substitute-env-vars.sh
 ADD sbin/render-templates.sh /usr/sbin/render-templates.sh
 ADD sbin/entrypoint.sh /usr/sbin/entrypoint.sh
 
-ADD templates/nginx.conf.tmpl /etc/nginx/templates/nginx.conf.tmpl
+ADD templates/nginx.conf.tmpl /etc/nginx/nginx.conf
+RUN cp /root/nginx-rtmp/stat.xsl /www/
 
-ENTRYPOINT ["/usr/sbin/entrypoint.sh"]
-CMD ["/usr/sbin/nginx", "-c", "/etc/nginx/nginx.conf"]
+
+RUN cd /root && curl -L https://github.com/openresty/lua-resty-redis/archive/v0.26.tar.gz > lua-resty-redis.tgz \
+    && mkdir lua-resty-redis && tar xzf lua-resty-redis.tgz -C lua-resty-redis --strip 1
+
+RUN mkdir -p /usr/local/lib/lua/5.1/resty/ && cp /root/lua-resty-redis/lib/resty/*.lua /usr/local/lib/lua/5.1/resty/
+
+# ENTRYPOINT ["/usr/sbin/entrypoint.sh"]
+# CMD ["/usr/sbin/nginx", "-c", "/etc/nginx/nginx.conf"]
+CMD ["nginx", "-g", "daemon off;"]
